@@ -1,0 +1,426 @@
+diff --git a/src/core/delegated_frame_node.cpp b/src/core/delegated_frame_node.cpp
+index 6731a6a..d83b13d 100644
+--- a/src/core/delegated_frame_node.cpp
++++ b/src/core/delegated_frame_node.cpp
+@@ -65,7 +65,10 @@
+ #include "cc/quads/yuv_video_draw_quad.h"
+ #include "content/common/host_shared_bitmap_manager.h"
+ #include <QOpenGLContext>
++#include <QOpenGLFramebufferObject>
+ #include <QOpenGLFunctions>
++#include <QSGAbstractRenderer>
++#include <QSGEngine>
+ #include <QSGSimpleRectNode>
+ #include <QSGSimpleTextureNode>
+ #include <QSGTexture>
+@@ -76,6 +79,36 @@
+ #include <EGL/eglext.h>
+ #endif
+ 
++class RenderPassTexture : public QSGTexture, protected QOpenGLFunctions
++{
++public:
++    RenderPassTexture(const cc::RenderPassId &id);
++
++    const cc::RenderPassId &id() const { return m_id; }
++    void bind();
++
++    int textureId() const { return m_fbo ? m_fbo->texture() : 0; }
++    QSize textureSize() const { return m_rect.size(); }
++    bool hasAlphaChannel() const { return m_format != GL_RGB; }
++    bool hasMipmaps() const { return false; }
++
++    void setRect(const QRect &rect) { m_rect = rect; }
++    void setFormat(GLenum format) { m_format = format; }
++    QSGNode *rootNode() { return m_rootNode.data(); }
++
++    void grab();
++
++private:
++    cc::RenderPassId m_id;
++    QRect m_rect;
++    GLenum m_format;
++
++    QScopedPointer<QSGEngine> m_sgEngine;
++    QScopedPointer<QSGRootNode> m_rootNode;
++    QScopedPointer<QSGAbstractRenderer> m_renderer;
++    QScopedPointer<QOpenGLFramebufferObject> m_fbo;
++};
++
+ class MailboxTexture : public QSGTexture, protected QOpenGLFunctions {
+ public:
+     MailboxTexture(const gpu::MailboxHolder &mailboxHolder, const QSize textureSize);
+@@ -125,13 +158,12 @@ private:
+     QSGGeometry m_geometry;
+ };
+ 
+-static inline QSharedPointer<QSGLayer> findRenderPassLayer(const cc::RenderPassId &id, const QList<QPair<cc::RenderPassId, QSharedPointer<QSGLayer> > > &list)
++static inline QSharedPointer<RenderPassTexture> findRenderPassTexture(const cc::RenderPassId &id, const QList<QSharedPointer<RenderPassTexture> > &list)
+ {
+-    typedef QPair<cc::RenderPassId, QSharedPointer<QSGLayer> > Pair;
+-    Q_FOREACH (const Pair &pair, list)
+-        if (pair.first == id)
+-            return pair.second;
+-    return QSharedPointer<QSGLayer>();
++    Q_FOREACH (const QSharedPointer<RenderPassTexture> &texture, list)
++        if (texture->id() == id)
++            return texture;
++    return QSharedPointer<RenderPassTexture>();
+ }
+ 
+ static QSGNode *buildRenderPassChain(QSGNode *chainParent)
+@@ -265,6 +297,50 @@ static void deleteChromiumSync(gfx::TransferableFence *sync)
+     Q_ASSERT(!*sync);
+ }
+ 
++RenderPassTexture::RenderPassTexture(const cc::RenderPassId &id)
++    : QSGTexture()
++    , m_id(id)
++    , m_format(GL_RGBA)
++    , m_sgEngine(new QSGEngine)
++    , m_rootNode(new QSGRootNode)
++{
++    initializeOpenGLFunctions();
++}
++
++void RenderPassTexture::bind()
++{
++    glBindTexture(GL_TEXTURE_2D, m_fbo ? m_fbo->texture() : 0);
++    updateBindOptions();
++}
++
++void RenderPassTexture::grab()
++{
++    if (!m_renderer) {
++        m_sgEngine->initialize(QOpenGLContext::currentContext());
++        m_renderer.reset(m_sgEngine->createRenderer());
++        m_renderer->setRootNode(m_rootNode.data());
++    }
++
++    if (!m_fbo || m_fbo->size() != m_rect.size() || m_fbo->format().internalTextureFormat() != m_format)
++    {
++        QOpenGLFramebufferObjectFormat format;
++        format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
++        format.setInternalTextureFormat(m_format);
++
++        m_fbo.reset(new QOpenGLFramebufferObject(m_rect.size(), format));
++        glBindTexture(GL_TEXTURE_2D, m_fbo->texture());
++        updateBindOptions(true);
++    }
++
++    m_renderer->setDeviceRect(m_rect.size());
++    m_renderer->setViewportRect(m_rect.size());
++    QRectF mirrored(m_rect.left(), m_rect.bottom(), m_rect.width(), -m_rect.height());
++    m_renderer->setProjectionMatrixToRect(mirrored);
++    m_renderer->setClearColor(Qt::transparent);
++
++    m_renderer->renderScene(m_fbo->handle());
++}
++
+ MailboxTexture::MailboxTexture(const gpu::MailboxHolder &mailboxHolder, const QSize textureSize)
+     : m_mailboxHolder(mailboxHolder)
+     , m_textureId(0)
+@@ -433,13 +509,8 @@ void DelegatedFrameNode::preprocess()
+     }
+ 
+     // Then render any intermediate RenderPass in order.
+-    typedef QPair<cc::RenderPassId, QSharedPointer<QSGLayer> > Pair;
+-    Q_FOREACH (const Pair &pair, m_sgObjects.renderPassLayers) {
+-        // The layer is non-live, request a one-time update here.
+-        pair.second->scheduleUpdate();
+-        // Proceed with the actual update.
+-        pair.second->updateTexture();
+-    }
++    Q_FOREACH (const QSharedPointer<RenderPassTexture> &renderPass, m_renderPassTextures)
++        renderPass->grab();
+ }
+ 
+ void DelegatedFrameNode::commit(ChromiumCompositorData *chromiumCompositorData, cc::ReturnedResourceArray *resourcesToRelease, RenderWidgetHostViewQtDelegate *apiDelegate)
+@@ -456,11 +527,11 @@ void DelegatedFrameNode::commit(ChromiumCompositorData *chromiumCompositorData,
+     matrix.scale(1 / m_chromiumCompositorData->frameDevicePixelRatio, 1 / m_chromiumCompositorData->frameDevicePixelRatio);
+     setMatrix(matrix);
+ 
+-    // Keep the old objects in scope to hold a ref on layers, resources and textures
+-    // that we can re-use. Destroy the remaining objects before returning.
+-    SGObjects previousSGObjects;
+-    qSwap(m_sgObjects, previousSGObjects);
++    // Keep the old texture lists around to find the ones we can re-use.
++    QList<QSharedPointer<RenderPassTexture> > oldRenderPassTextures;
++    m_renderPassTextures.swap(oldRenderPassTextures);
+     QHash<unsigned, QSharedPointer<ResourceHolder> > resourceCandidates;
++    //TODO: oldm_chromiumCompositorData->mailboxTextures.swap(mailboxTextureCandidates);
+     qSwap(m_chromiumCompositorData->resourceHolders, resourceCandidates);
+ 
+     // A frame's resource_list only contains the new resources to be added to the scene. Quads can
+@@ -477,13 +548,6 @@ void DelegatedFrameNode::commit(ChromiumCompositorData *chromiumCompositorData,
+ 
+     frameData->resource_list.clear();
+ 
+-    // There is currently no way to know which and how quads changed since the last frame.
+-    // We have to reconstruct the node chain with their geometries on every update.
+-    // Intermediate render pass node chains are going to be destroyed when previousSGObjects
+-    // goes out of scope together with any QSGLayer that could reference them.
+-    while (QSGNode *oldChain = firstChild())
+-        delete oldChain;
+-
+     // The RenderPasses list is actually a tree where a parent RenderPass is connected
+     // to its dependencies through a RenderPassId reference in one or more RenderPassQuads.
+     // The list is already ordered with intermediate RenderPasses placed before their
+@@ -497,24 +561,21 @@ void DelegatedFrameNode::commit(ChromiumCompositorData *chromiumCompositorData,
+ 
+         QSGNode *renderPassParent = 0;
+         if (pass != rootRenderPass) {
+-            QSharedPointer<QSGLayer> rpLayer = findRenderPassLayer(pass->id, previousSGObjects.renderPassLayers);
+-            if (!rpLayer) {
+-                rpLayer = QSharedPointer<QSGLayer>(apiDelegate->createLayer());
+-                // Avoid any premature texture update since we need to wait
+-                // for the GPU thread to produce the dependent resources first.
+-                rpLayer->setLive(false);
+-            }
+-            QSharedPointer<QSGRootNode> rootNode(new QSGRootNode);
+-            rpLayer->setRect(toQt(pass->output_rect));
+-            rpLayer->setSize(toQt(pass->output_rect.size()));
+-            rpLayer->setFormat(pass->has_transparent_background ? GL_RGBA : GL_RGB);
+-            rpLayer->setItem(rootNode.data());
+-            m_sgObjects.renderPassLayers.append(QPair<cc::RenderPassId, QSharedPointer<QSGLayer> >(pass->id, rpLayer));
+-            m_sgObjects.renderPassRootNodes.append(rootNode);
+-            renderPassParent = rootNode.data();
++            QSharedPointer<RenderPassTexture> rpTexture = findRenderPassTexture(pass->id, oldRenderPassTextures);
++            if (!rpTexture)
++                rpTexture = QSharedPointer<RenderPassTexture>(new RenderPassTexture(pass->id));
++            m_renderPassTextures.append(rpTexture);
++            rpTexture->setRect(toQt(pass->output_rect));
++            rpTexture->setFormat(pass->has_transparent_background ? GL_RGBA : GL_RGB);
++            renderPassParent = rpTexture->rootNode();
+         } else
+             renderPassParent = this;
+ 
++        // There is currently no way to know which and how quads changed since the last frame.
++        // We have to reconstruct the node chain with their geometries on every update.
++        while (QSGNode *oldChain = renderPassParent->firstChild())
++            delete oldChain;
++
+         QSGNode *renderPassChain = buildRenderPassChain(renderPassParent);
+         const cc::SharedQuadState *currentLayerState = 0;
+         QSGNode *currentLayerChain = 0;
+@@ -540,18 +601,15 @@ void DelegatedFrameNode::commit(ChromiumCompositorData *chromiumCompositorData,
+                 break;
+             } case cc::DrawQuad::RENDER_PASS: {
+                 const cc::RenderPassDrawQuad *renderPassQuad = cc::RenderPassDrawQuad::MaterialCast(quad);
+-                QSGTexture *layer = findRenderPassLayer(renderPassQuad->render_pass_id, m_sgObjects.renderPassLayers).data();
++                QSGTexture *texture = findRenderPassTexture(renderPassQuad->render_pass_id, m_renderPassTextures).data();
+                 // cc::GLRenderer::DrawRenderPassQuad silently ignores missing render passes.
+-                if (!layer)
++                if (!texture)
+                     continue;
+ 
+-                // Only QSGImageNode currently supports QSGLayer textures.
+-                QSGImageNode *imageNode = apiDelegate->createImageNode();
+-                imageNode->setTargetRect(toQt(quad->rect));
+-                imageNode->setInnerTargetRect(toQt(quad->rect));
+-                imageNode->setTexture(layer);
+-                imageNode->update();
+-                currentLayerChain->appendChildNode(imageNode);
++                QSGSimpleTextureNode *textureNode = new QSGSimpleTextureNode;
++                textureNode->setRect(toQt(quad->rect));
++                textureNode->setTexture(texture);
++                currentLayerChain->appendChildNode(textureNode);
+                 break;
+             } case cc::DrawQuad::TEXTURE_CONTENT: {
+                 const cc::TextureDrawQuad *tquad = cc::TextureDrawQuad::MaterialCast(quad);
+@@ -607,9 +665,14 @@ void DelegatedFrameNode::commit(ChromiumCompositorData *chromiumCompositorData,
+ 
+                 QSGSimpleTextureNode *textureNode = new QSGSimpleTextureNode;
+                 textureNode->setRect(toQt(quad->rect));
+-                textureNode->setSourceRect(toQt(tquad->tex_coord_rect));
++                // textureNode->setSourceRect(toQt(tquad->tex_coord_rect));
+                 textureNode->setFiltering(resource->transferableResource().filter == GL_LINEAR ? QSGTexture::Linear : QSGTexture::Nearest);
+                 textureNode->setTexture(initAndHoldTexture(resource, quad->ShouldDrawWithBlending(), apiDelegate));
++
++                // FIXME: Find out if we can implement a QSGSimpleTextureNode::setSourceRect instead of this hack.
++                // This has to be done at the end since many QSGSimpleTextureNode methods would overwrite this.
++                QSGGeometry::updateTexturedRectGeometry(textureNode->geometry(), textureNode->rect(), textureNode->texture()->convertToNormalizedSourceRect(toQt(tquad->tex_coord_rect)));
++
+                 currentLayerChain->appendChildNode(textureNode);
+                 break;
+             } case cc::DrawQuad::YUV_VIDEO_CONTENT: {
+diff --git a/src/core/delegated_frame_node.h b/src/core/delegated_frame_node.h
+index 5b361e9..d8ba17d 100644
+--- a/src/core/delegated_frame_node.h
++++ b/src/core/delegated_frame_node.h
+@@ -42,6 +42,7 @@
+ #include "cc/resources/transferable_resource.h"
+ #include <QMutex>
+ #include <QSGNode>
++#include <QSGTexture>
+ #include <QSharedData>
+ #include <QSharedPointer>
+ #include <QWaitCondition>
+@@ -49,15 +50,12 @@
+ #include "chromium_gpu_helper.h"
+ #include "render_widget_host_view_qt_delegate.h"
+ 
+-QT_BEGIN_NAMESPACE
+-class QSGLayer;
+-QT_END_NAMESPACE
+-
+ namespace cc {
+ class DelegatedFrameData;
+ }
+ 
+ class MailboxTexture;
++class RenderPassTexture;
+ class ResourceHolder;
+ 
+ // Separating this data allows another DelegatedFrameNode to reconstruct the QSGNode tree from the mailbox textures
+@@ -87,9 +85,8 @@ private:
+     QSGTexture *initAndHoldTexture(ResourceHolder *resource, bool quadIsAllOpaque, RenderWidgetHostViewQtDelegate *apiDelegate = 0);
+ 
+     QExplicitlySharedDataPointer<ChromiumCompositorData> m_chromiumCompositorData;
++    QList<QSharedPointer<RenderPassTexture> > m_renderPassTextures;
+     struct SGObjects {
+-        QList<QPair<cc::RenderPassId, QSharedPointer<QSGLayer> > > renderPassLayers;
+-        QList<QSharedPointer<QSGRootNode> > renderPassRootNodes;
+         QList<QSharedPointer<QSGTexture> > textureStrongRefs;
+     } m_sgObjects;
+     int m_numPendingSyncPoints;
+diff --git a/src/core/render_widget_host_view_qt_delegate.h b/src/core/render_widget_host_view_qt_delegate.h
+index 1aae6be..a282d9c 100644
+--- a/src/core/render_widget_host_view_qt_delegate.h
++++ b/src/core/render_widget_host_view_qt_delegate.h
+@@ -46,8 +46,6 @@ QT_BEGIN_NAMESPACE
+ class QCursor;
+ class QEvent;
+ class QPainter;
+-class QSGImageNode;
+-class QSGLayer;
+ class QSGNode;
+ class QSGTexture;
+ class QVariant;
+@@ -84,8 +82,6 @@ public:
+     virtual bool isVisible() const = 0;
+     virtual QWindow* window() const = 0;
+     virtual QSGTexture *createTextureFromImage(const QImage &) = 0;
+-    virtual QSGLayer *createLayer() = 0;
+-    virtual QSGImageNode *createImageNode() = 0;
+     virtual void update() = 0;
+     virtual void updateCursor(const QCursor &) = 0;
+     virtual void resize(int width, int height) = 0;
+diff --git a/src/webengine/render_widget_host_view_qt_delegate_quick.cpp b/src/webengine/render_widget_host_view_qt_delegate_quick.cpp
+index bfcda55..0ece077 100644
+--- a/src/webengine/render_widget_host_view_qt_delegate_quick.cpp
++++ b/src/webengine/render_widget_host_view_qt_delegate_quick.cpp
+@@ -140,18 +140,6 @@ QSGTexture *RenderWidgetHostViewQtDelegateQuick::createTextureFromImage(const QI
+     return QQuickItem::window()->createTextureFromImage(image, QQuickWindow::TextureCanUseAtlas);
+ }
+ 
+-QSGLayer *RenderWidgetHostViewQtDelegateQuick::createLayer()
+-{
+-    QSGRenderContext *renderContext = QQuickWindowPrivate::get(QQuickItem::window())->context;
+-    return renderContext->sceneGraphContext()->createLayer(renderContext);
+-}
+-
+-QSGImageNode *RenderWidgetHostViewQtDelegateQuick::createImageNode()
+-{
+-    QSGRenderContext *renderContext = QQuickWindowPrivate::get(QQuickItem::window())->context;
+-    return renderContext->sceneGraphContext()->createImageNode();
+-}
+-
+ void RenderWidgetHostViewQtDelegateQuick::update()
+ {
+     QQuickItem::update();
+diff --git a/src/webengine/render_widget_host_view_qt_delegate_quick.h b/src/webengine/render_widget_host_view_qt_delegate_quick.h
+index cb1b6a8..2b7ff26 100644
+--- a/src/webengine/render_widget_host_view_qt_delegate_quick.h
++++ b/src/webengine/render_widget_host_view_qt_delegate_quick.h
+@@ -60,8 +60,6 @@ public:
+     virtual bool isVisible() const Q_DECL_OVERRIDE;
+     virtual QWindow* window() const Q_DECL_OVERRIDE;
+     virtual QSGTexture *createTextureFromImage(const QImage &) Q_DECL_OVERRIDE;
+-    virtual QSGLayer *createLayer() Q_DECL_OVERRIDE;
+-    virtual QSGImageNode *createImageNode() Q_DECL_OVERRIDE;
+     virtual void update() Q_DECL_OVERRIDE;
+     virtual void updateCursor(const QCursor &) Q_DECL_OVERRIDE;
+     virtual void resize(int width, int height) Q_DECL_OVERRIDE;
+diff --git a/src/webengine/render_widget_host_view_qt_delegate_quickwindow.cpp b/src/webengine/render_widget_host_view_qt_delegate_quickwindow.cpp
+index c395fdd..bb916cc 100644
+--- a/src/webengine/render_widget_host_view_qt_delegate_quickwindow.cpp
++++ b/src/webengine/render_widget_host_view_qt_delegate_quickwindow.cpp
+@@ -100,16 +100,6 @@ QSGTexture *RenderWidgetHostViewQtDelegateQuickWindow::createTextureFromImage(co
+     return m_realDelegate->createTextureFromImage(image);
+ }
+ 
+-QSGLayer *RenderWidgetHostViewQtDelegateQuickWindow::createLayer()
+-{
+-    return m_realDelegate->createLayer();
+-}
+-
+-QSGImageNode *RenderWidgetHostViewQtDelegateQuickWindow::createImageNode()
+-{
+-    return m_realDelegate->createImageNode();
+-}
+-
+ void RenderWidgetHostViewQtDelegateQuickWindow::update()
+ {
+     QQuickWindow::update();
+diff --git a/src/webengine/render_widget_host_view_qt_delegate_quickwindow.h b/src/webengine/render_widget_host_view_qt_delegate_quickwindow.h
+index 6bd21d1..6efad1d 100644
+--- a/src/webengine/render_widget_host_view_qt_delegate_quickwindow.h
++++ b/src/webengine/render_widget_host_view_qt_delegate_quickwindow.h
+@@ -63,8 +63,6 @@ public:
+     virtual bool isVisible() const Q_DECL_OVERRIDE;
+     virtual QWindow* window() const Q_DECL_OVERRIDE;
+     virtual QSGTexture *createTextureFromImage(const QImage &) Q_DECL_OVERRIDE;
+-    virtual QSGLayer *createLayer() Q_DECL_OVERRIDE;
+-    virtual QSGImageNode *createImageNode() Q_DECL_OVERRIDE;
+     virtual void update() Q_DECL_OVERRIDE;
+     virtual void updateCursor(const QCursor &) Q_DECL_OVERRIDE;
+     virtual void resize(int width, int height) Q_DECL_OVERRIDE;
+diff --git a/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.cpp b/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.cpp
+index 252b13f..55dafbf 100644
+--- a/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.cpp
++++ b/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.cpp
+@@ -44,11 +44,9 @@
+ #include <QOpenGLContext>
+ #include <QResizeEvent>
+ #include <QSGAbstractRenderer>
++#include <QSGEngine>
+ #include <QSGNode>
+ #include <QWindow>
+-#include <private/qsgcontext_p.h>
+-#include <private/qsgengine_p.h>
+-
+ 
+ static const int MaxTooltipLength = 1024;
+ 
+@@ -160,17 +158,6 @@ QSGTexture *RenderWidgetHostViewQtDelegateWidget::createTextureFromImage(const Q
+     return m_sgEngine->createTextureFromImage(image, QSGEngine::TextureCanUseAtlas);
+ }
+ 
+-QSGLayer *RenderWidgetHostViewQtDelegateWidget::createLayer()
+-{
+-    QSGEnginePrivate *enginePrivate = QSGEnginePrivate::get(m_sgEngine.data());
+-    return enginePrivate->sgContext->createLayer(enginePrivate->sgRenderContext.data());
+-}
+-
+-QSGImageNode *RenderWidgetHostViewQtDelegateWidget::createImageNode()
+-{
+-    return QSGEnginePrivate::get(m_sgEngine.data())->sgContext->createImageNode();
+-}
+-
+ void RenderWidgetHostViewQtDelegateWidget::update()
+ {
+ #if (QT_VERSION < QT_VERSION_CHECK(5, 4, 0))
+diff --git a/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.h b/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.h
+index 54fdf3b..25e3b1f 100644
+--- a/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.h
++++ b/src/webenginewidgets/render_widget_host_view_qt_delegate_widget.h
+@@ -68,8 +68,6 @@ public:
+     virtual bool isVisible() const Q_DECL_OVERRIDE;
+     virtual QWindow* window() const Q_DECL_OVERRIDE;
+     virtual QSGTexture *createTextureFromImage(const QImage &) Q_DECL_OVERRIDE;
+-    virtual QSGLayer *createLayer() Q_DECL_OVERRIDE;
+-    virtual QSGImageNode *createImageNode() Q_DECL_OVERRIDE;
+     virtual void update() Q_DECL_OVERRIDE;
+     virtual void updateCursor(const QCursor &) Q_DECL_OVERRIDE;
+     virtual void resize(int width, int height) Q_DECL_OVERRIDE;
