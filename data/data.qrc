@@ -1,0 +1,7 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+    <file>browser.svg</file>
+    <file>loading.gif</file>
+    <file>defaulticon.png</file>
+</qresource>
+</RCC>
