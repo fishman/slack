@@ -2,9 +2,11 @@
 <html>
 	<head>
 		<script type="text/javascript">
-      last_team_domain = "saucelabs"
       macgap = {}
       macgap.app = {}
+      macgap.app.lastTeamDomain = function() {
+        return "saucelabs";
+      }
       macgap.app.useSlackDev = function() {
         return false;
       }
