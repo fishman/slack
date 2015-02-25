@@ -49,6 +49,7 @@
 // #include "tabwidget.h"
 #include "webview.h"
 
+#include <qwebenginepage.h>
 #include <qwebchannel.h>
 
 #include <QtGui/QClipboard>
@@ -68,6 +69,8 @@
 
 #include <QtCore/QDebug>
 #include <QtCore/QBuffer>
+
+#include <QtGui/QDesktopServices>
 
 
 #include <QStringList>
@@ -131,12 +134,12 @@ void ChatServer::downloaded(QNetworkReply *reply)
 void ChatServer::sendNotification(const QString &title, const QString &body)
 {
     QString fileName = QDir::tempPath() + "/qtwebkit-notif.png";
-
-    QRegularExpression re("([Rr]eza|fishman|kvm|syncup)");
-    QRegularExpressionMatch match = re.match(body);
-    if (!match.hasMatch()) {
-        return;
-    }
+    // QRegularExpression re("([Rr]eza|fishman|kvm|syncup)");
+    // QRegularExpressionMatch match = re.match(body);
+    // if (!match.hasMatch()) {
+    //     return;
+    // }
+    BrowserApplication::instance()->alert();
 
     if (QFile(fileName).exists()) {
         QFile(fileName).remove();
@@ -234,37 +237,15 @@ MainWindow *WebPage::mainWindow()
     return BrowserApplication::instance()->mainWindow();
 }
 
-#if defined(QWEBENGINEPAGE_ACCEPTNAVIGATIONREQUEST)
-bool WebPage::acceptNavigationRequest(QWebEngineFrame *frame, const QNetworkRequest &request, NavigationType type)
+bool WebPage::acceptNavigationRequest(const QUrl &url, QWebEnginePage::NavigationType type, bool isMainFrame)
 {
-    // ctrl open in new tab
-    // ctrl-shift open in new tab and select
-    // ctrl-alt open in new window
-    if (type == QWebEnginePage::NavigationTypeLinkClicked
-        && (m_keyboardModifiers & Qt::ControlModifier
-            || m_pressedButtons == Qt::MidButton)) {
-        bool newWindow = (m_keyboardModifiers & Qt::AltModifier);
-        WebView *webView;
-        if (newWindow) {
-            BrowserApplication::instance()->newMainWindow();
-            MainWindow *newMainWindow = BrowserApplication::instance()->mainWindow();
-            webView = newMainWindow->webView();
-            newMainWindow->raise();
-            newMainWindow->activateWindow();
-            webView->setFocus();
-        } else {
-            bool selectNewTab = (m_keyboardModifiers & Qt::ShiftModifier);
-            // webView = mainWindow()->tabWidget()->newTab(selectNewTab);
-        }
-        webView->load(request);
-        m_keyboardModifiers = Qt::NoModifier;
-        m_pressedButtons = Qt::NoButton;
-        return false;
+    if(url.host().contains("saucelabs.slack.com")) {
+      return true;
+    } else {
+      QDesktopServices::openUrl(url);
+      return false;
     }
-    m_loadingUrl = request.url();
-    emit loadingUrl(m_loadingUrl);
 }
-#endif
 
 bool WebPage::certificateError(const QWebEngineCertificateError &error)
 {
@@ -526,7 +507,6 @@ void WebView::loadFinished(bool success)
       // "alert('hello');"
       // "});"
       // "});"
-  qWarning() << this->title();
   this->webPage()->mainWindow()->setTitle(this->title());
   const char * javascript =
       "\"use strict\";function QObject(e,n,t){function o(e){if(!e||!e[\"__QObject*__\"]||void 0===e.id||void 0===e.data)return e;var n=e.id;if(t.objects[n])return t.objects[n];var o=new QObject(n,e.data,t);return o.destroyed.connect(function(){if(t.objects[n]===o){delete t.objects[n];var e=[];for(var a in o)e.push(a);for(var i in e)delete o[e[i]]}}),o}function a(e,n){var o=e[0],a=e[1];c[o]={connect:function(e){return\"function\"!=typeof e?void console.error(\"Bad callback given to connect to signal \"+o):(c.__objectSignals__[a]=c.__objectSignals__[a]||[],c.__objectSignals__[a].push(e),void(n||\"destroyed\"===o||t.exec({type:QWebChannelMessageTypes.connectToSignal,object:c.__id__,signal:a})))},disconnect:function(e){if(\"function\"!=typeof e)return void console.error(\"Bad callback given to disconnect from signal \"+o);c.__objectSignals__[a]=c.__objectSignals__[a]||[];var i=c.__objectSignals__[a].indexOf(e);return-1===i?void console.error(\"Cannot find connection of signal \"+o+\" to \"+e.name):(c.__objectSignals__[a].splice(i,1),void(n||0!==c.__objectSignals__[a].length||t.exec({type:QWebChannelMessageTypes.disconnectFromSignal,object:c.__id__,signal:a})))}}}function i(e,n){var t=c.__objectSignals__[e];t&&t.forEach(function(e){e.apply(e,n)})}function s(e){var n=e[0],a=e[1];c[n]=function(){for(var e,n=[],i=0;i<arguments.length;++i)\"function\"==typeof arguments[i]?e=arguments[i]:n.push(arguments[i]);t.exec({type:QWebChannelMessageTypes.invokeMethod,object:c.__id__,method:a,args:n},function(n){if(void 0!==n){var t=o(n);e&&e(t)}})}}function r(e){var n=e[0],o=e[1],i=e[2];c.__propertyCache__[n]=e[3],i&&(1===i[0]&&(i[0]=o+\"Changed\"),a(i,!0)),Object.defineProperty(c,o,{get:function(){var e=c.__propertyCache__[n];return void 0===e&&console.warn('Undefined value in property cache for property \"'+o+'\" in object '+c.__id__),e},set:function(e){return void 0===e?void console.warn(\"Property setter for \"+o+\" called with undefined value!\"):(c.__propertyCache__[n]=e,void t.exec({type:QWebChannelMessageTypes.setProperty,object:c.__id__,property:n,value:e}))}})}this.__id__=e,t.objects[e]=this,this.__objectSignals__={},this.__propertyCache__={};var c=this;this.propertyUpdate=function(e,n){for(var t in n){var o=n[t];c.__propertyCache__[t]=o}for(var a in e)i(a,e[a])},this.signalEmitted=function(e,n){i(e,n)},n.methods.forEach(s),n.properties.forEach(r),n.signals.forEach(function(e){a(e,!1)});for(var e in n.enums)c[e]=n.enums[e]}var QWebChannelMessageTypes={signal:1,propertyUpdate:2,init:3,idle:4,debug:5,invokeMethod:6,connectToSignal:7,disconnectFromSignal:8,setProperty:9,response:10},QWebChannel=function(e,n){if(\"object\"!=typeof e||\"function\"!=typeof e.send)return void console.error(\"The QWebChannel expects a transport object with a send function and onmessage callback property. Given is: transport: \"+typeof e+\", transport.send: \"+typeof e.send);var t=this;this.transport=e,this.send=function(e){\"string\"!=typeof e&&(e=JSON.stringify(e)),t.transport.send(e)},this.transport.onmessage=function(e){var n=e.data;switch(\"string\"==typeof n&&(n=JSON.parse(n)),n.type){case QWebChannelMessageTypes.signal:t.handleSignal(n);break;case QWebChannelMessageTypes.response:t.handleResponse(n);break;case QWebChannelMessageTypes.propertyUpdate:t.handlePropertyUpdate(n);break;case QWebChannelMessageTypes.init:t.handleInit(n);break;default:console.error(\"invalid message received:\",e.data)}},this.execCallbacks={},this.execId=0,this.exec=function(e,n){return n?(t.execId===Number.MAX_VALUE&&(t.execId=Number.MIN_VALUE),e.hasOwnProperty(\"id\")?void console.error(\"Cannot exec message with property id: \"+JSON.stringify(e)):(e.id=t.execId++,t.execCallbacks[e.id]=n,void t.send(e))):void t.send(e)},this.objects={},this.handleSignal=function(e){var n=t.objects[e.object];n?n.signalEmitted(e.signal,e.args):console.warn(\"Unhandled signal: \"+e.object+\"::\"+e.signal)},this.handleResponse=function(e){return e.hasOwnProperty(\"id\")?(t.execCallbacks[e.id](e.data),void delete t.execCallbacks[e.id]):void console.error(\"Invalid response message received: \",JSON.stringify(e))},this.handlePropertyUpdate=function(e){for(var n in e.data){var o=e.data[n],a=t.objects[o.object];a?a.propertyUpdate(o.signals,o.properties):console.warn(\"Unhandled property update: \"+o.object+\"::\"+o.signal)}t.exec({type:QWebChannelMessageTypes.idle})},this.initialized=!1,this.handleInit=function(e){if(!t.initialized){t.initialized=!0;for(var o in e.data)var a=e.data[o],i=new QObject(o,a,t);n&&n(t),t.exec({type:QWebChannelMessageTypes.idle})}},this.debug=function(e){t.send({type:QWebChannelMessageTypes.debug,data:e})},t.exec({type:QWebChannelMessageTypes.init})};\"object\"==typeof module&&(module.exports={QWebChannel:QWebChannel});"

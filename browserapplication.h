@@ -71,6 +71,7 @@ public:
     QIcon icon(const QUrl &url) const;
     QIcon defaultIcon() const;
 
+    void alert();
     void saveSession();
     bool canRestoreSession() const;
 

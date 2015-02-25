@@ -358,6 +358,11 @@ bool BrowserApplication::event(QEvent* event)
 }
 #endif
 
+void BrowserApplication::alert()
+{
+  QApplication::alert(mainWindow());
+}
+
 void BrowserApplication::openUrl(const QUrl &url)
 {
     mainWindow()->loadPage(url.toString());

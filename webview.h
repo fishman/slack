@@ -65,9 +65,7 @@ public:
     MainWindow *mainWindow();
 
 protected:
-#if defined(QWEBENGINEPAGE_ACCEPTNAVIGATIONREQUEST)
-    bool acceptNavigationRequest(QWebEngineFrame *frame, const QNetworkRequest &request, NavigationType type);
-#endif
+    bool acceptNavigationRequest(const QUrl &url, QWebEnginePage::NavigationType type, bool isMainFrame);
     QWebEnginePage *createWindow(QWebEnginePage::WebWindowType type);
 #if !defined(QT_NO_UITOOLS)
     QObject *createPlugin(const QString &classId, const QUrl &url, const QStringList &paramNames, const QStringList &paramValues);

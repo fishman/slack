@@ -5,10 +5,10 @@
 #-------------------------------------------------
 
 TEMPLATE = app
-TARGET = slackpp
+TARGET = slack
 
 CONFIG += -std=gnu++11
-QT       += webenginewidgets network widgets dbus webchannel
+QT       += webenginewidgets network widgets dbus webchannel gui
 
 
 qtHaveModule(uitools):!embedded: QT += uitools
