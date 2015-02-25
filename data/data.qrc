@@ -2,6 +2,7 @@
 <qresource>
     <file>browser.svg</file>
     <file>loading.gif</file>
+    <file>index.html</file>
     <file>defaulticon.png</file>
 </qresource>
 </RCC>
