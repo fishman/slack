@@ -6,6 +6,18 @@
 
 #include <QtCore/QObject>
 
+
+QString readFile (const QString& filename)
+{
+  QFile file(filename);
+  if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+  {
+    QTextStream stream(&file);
+    return stream.readAll();
+  }
+  return "";
+}
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow),
@@ -20,7 +32,8 @@ MainWindow::MainWindow(QWidget *parent) :
     layout->addWidget(qobject_cast<QWidget*>(this->webView()));
     centralWidget->setLayout(layout);
     setCentralWidget(qobject_cast<QWidget*>(this->webView()));
-    loadPage("https://saucelabs.slack.com");
+    webView()->setHtml(readFile(QLatin1String(":index.html")));
+
 }
 
 MainWindow::~MainWindow()
