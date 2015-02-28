@@ -167,7 +167,7 @@ void BrowserApplication::quitBrowser()
     clean();
     int tabCount = 0;
     for (int i = 0; i < m_mainWindows.count(); ++i) {
-        tabCount =+ m_mainWindows.at(i)->tabWidget()->count();
+        tabCount += m_mainWindows.at(i)->tabWidget()->count();
     }
 
     if (tabCount > 1) {
@@ -209,6 +209,7 @@ void BrowserApplication::postLaunch()
         else
             mainWindow()->slotHome();
     }
+    // BrowserApplication::historyManager();
 }
 
 void BrowserApplication::loadSettings()
@@ -216,8 +217,12 @@ void BrowserApplication::loadSettings()
     QSettings settings;
     settings.beginGroup(QLatin1String("websettings"));
 
-    /*
     QWebEngineSettings *defaultSettings = QWebEngineSettings::globalSettings();
+    defaultSettings->setAttribute(QWebEngineSettings::JavascriptEnabled, settings.value(QLatin1String("enableJavascript"), true).toBool());
+    defaultSettings->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, settings.value(QLatin1String("enableScrollAnimator"), true).toBool());
+    /*
+    QWebEngineProfile *defaultProfile = QWebEngineProfile::defaultProfile();
+
     QString standardFontFamily = defaultSettings->fontFamily(QWebEngineSettings::StandardFont);
     int standardFontSize = defaultSettings->fontSize(QWebEngineSettings::DefaultFontSize);
     QFont standardFont = QFont(standardFontFamily, standardFontSize);
@@ -232,8 +237,6 @@ void BrowserApplication::loadSettings()
     defaultSettings->setFontFamily(QWebEngineSettings::FixedFont, fixedFont.family());
     defaultSettings->setFontSize(QWebEngineSettings::DefaultFixedFontSize, fixedFont.pointSize());
 
-    defaultSettings->setAttribute(QWebEngineSettings::JavascriptEnabled, settings.value(QLatin1String("enableJavascript"), true).toBool());
-    defaultSettings->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, settings.value(QLatin1String("enableScrollAnimator"), true).toBool());
 
 #if defined(QTWEBENGINE_PLUGINS)
     defaultSettings->setAttribute(QWebEngineSettings::PluginsEnabled, settings.value(QLatin1String("enablePlugins"), true).toBool());
@@ -243,6 +246,14 @@ void BrowserApplication::loadSettings()
     QUrl url = settings.value(QLatin1String("userStyleSheet")).toUrl();
     defaultSettings->setUserStyleSheetUrl(url);
 #endif
+    defaultProfile->setHttpUserAgent(settings.value(QLatin1String("httpUserAgent")).toString());
+    settings.endGroup();
+    settings.beginGroup(QLatin1String("cookies"));
+
+    QWebEngineProfile::PersistentCookiesPolicy persistentCookiesPolicy = QWebEngineProfile::PersistentCookiesPolicy(settings.value(QLatin1String("persistentCookiesPolicy")).toInt());
+    defaultProfile->setPersistentCookiesPolicy(persistentCookiesPolicy);
+    QString pdataPath = settings.value(QLatin1String("persistentDataPath")).toString();
+    defaultProfile->setPersistentStoragePath(pdataPath);
 
     settings.endGroup();
     */
@@ -386,6 +397,7 @@ MainWindow *BrowserApplication::mainWindow()
 
 void BrowserApplication::newLocalSocketConnection()
 {
+  /*
     QLocalSocket *socket = m_localServer->nextPendingConnection();
     if (!socket)
         return;
@@ -398,6 +410,7 @@ void BrowserApplication::newLocalSocketConnection()
         settings.beginGroup(QLatin1String("general"));
         int openLinksIn = settings.value(QLatin1String("openLinksIn"), 0).toInt();
         settings.endGroup();
+        qWarning() << "helloworld";
         if (openLinksIn == 1)
             newMainWindow();
         openUrl(url);
@@ -405,10 +418,10 @@ void BrowserApplication::newLocalSocketConnection()
     delete socket;
     mainWindow()->raise();
     mainWindow()->activateWindow();
+    */
 }
 
-/*
-CookieJar *BrowserApplication::cookieJar()
+/*CookieJar *BrowserApplication::cookieJar()
 {
 #if defined(QWEBENGINEPAGE_SETNETWORKACCESSMANAGER)
     return (CookieJar*)networkAccessManager()->cookieJar();
@@ -416,7 +429,30 @@ CookieJar *BrowserApplication::cookieJar()
     return 0;
 #endif
 }
-*/
+
+DownloadManager *BrowserApplication::downloadManager()
+{
+    if (!s_downloadManager) {
+        s_downloadManager = new DownloadManager();
+    }
+    return s_downloadManager;
+}
+
+QNetworkAccessManager *BrowserApplication::networkAccessManager()
+{
+#if defined(QWEBENGINEPAGE_SETNETWORKACCESSMANAGER)
+    if (!s_networkAccessManager) {
+        s_networkAccessManager = new NetworkAccessManager();
+        s_networkAccessManager->setCookieJar(new CookieJar);
+    }
+    return s_networkAccessManager;
+#else
+    if (!s_networkAccessManager) {
+        s_networkAccessManager = new QNetworkAccessManager();
+    }
+    return s_networkAccessManager;
+#endif
+} */
 
 QIcon BrowserApplication::icon(const QUrl &url) const
 {

@@ -6,9 +6,9 @@
 
 TEMPLATE = app
 TARGET = slack
+QT += webenginewidgets network widgets dbus webchannel gui
 
 CONFIG += -std=gnu++11
-QT       += webenginewidgets network widgets dbus webchannel gui
 
 
 qtHaveModule(uitools):!embedded: QT += uitools
@@ -25,4 +25,6 @@ HEADERS  += mainwindow.h\
 
 RESOURCES += data/data.qrc
 
-FORMS    += mainwindow.ui
+# FORMS    += mainwindow.ui
+target.path = ~/bin
+INSTALLS += target

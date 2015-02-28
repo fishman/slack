@@ -273,9 +273,7 @@ bool WebPage::certificateError(const QWebEngineCertificateError &error)
 QWebEnginePage *WebPage::createWindow(QWebEnginePage::WebWindowType type)
 {
     Q_UNUSED(type);
-    BrowserApplication::instance()->newMainWindow();
-    MainWindow *mainWindow = BrowserApplication::instance()->mainWindow();
-    return mainWindow->webView()->page();
+    return mainWindow()->webView()->page();
 }
 
 #if !defined(QT_NO_UITOOLS)

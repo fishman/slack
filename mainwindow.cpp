@@ -18,12 +18,10 @@ QString readFile (const QString& filename)
   return "";
 }
 
-MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent),
-    ui(new Ui::MainWindow),
-    m_webView(new WebView)
+MainWindow::MainWindow(QWidget *parent, Qt::WindowFlags flags)
+    : QMainWindow(parent, flags)
+    , m_webView(new WebView(this))
 {
-    ui->setupUi(this);
     QWidget *centralWidget = new QWidget(this);
     QVBoxLayout *layout = new QVBoxLayout;
 
@@ -38,12 +36,12 @@ MainWindow::MainWindow(QWidget *parent) :
 
 MainWindow::~MainWindow()
 {
-    delete ui;
+    delete m_webView;
 }
 
 WebView *MainWindow::webView()
 {
-  return m_webView;
+    return m_webView;
 }
 
 void MainWindow::loadPage(const QString &page)

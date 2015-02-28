@@ -1,7 +1,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QMainWindow>
+#include <QtWidgets/QMainWindow>
 
 class WebView;
 namespace Ui {
@@ -13,7 +13,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = 0);
+    MainWindow(QWidget *parent = 0, Qt::WindowFlags flags = 0);
     ~MainWindow();
 
     WebView *webView();
@@ -24,7 +24,6 @@ public slots:
     void slotHome();
 
 private:
-    Ui::MainWindow *ui;
     WebView *m_webView;
 };
 
