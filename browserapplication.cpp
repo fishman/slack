@@ -123,7 +123,7 @@ BrowserApplication::BrowserApplication(int &argc, char **argv)
     }
 #endif
 
-    QDesktopServices::setUrlHandler(QLatin1String("http"), this, "openUrl");
+    // QDesktopServices::setUrlHandler(QLatin1String("http"), this, "openUrl");
     QString localSysName = QLocale::system().name();
 
     installTranslator(QLatin1String("qt_") + localSysName);

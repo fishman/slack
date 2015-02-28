@@ -239,11 +239,13 @@ MainWindow *WebPage::mainWindow()
 
 bool WebPage::acceptNavigationRequest(const QUrl &url, QWebEnginePage::NavigationType type, bool isMainFrame)
 {
-    if(url.host().contains("saucelabs.slack.com")) {
-      return true;
-    } else {
-      QDesktopServices::openUrl(url);
-      return false;
+    Q_UNUSED(type);
+    Q_UNUSED(isMainFrame);
+    if(url.host().contains("slack.com"))
+        return true;
+    else {
+        QDesktopServices::openUrl(url);
+        return false;
     }
 }
 
@@ -270,11 +272,10 @@ bool WebPage::certificateError(const QWebEngineCertificateError &error)
 
 QWebEnginePage *WebPage::createWindow(QWebEnginePage::WebWindowType type)
 {
-    if (type == QWebEnginePage::WebBrowserWindow) {
-        BrowserApplication::instance()->newMainWindow();
-        MainWindow *mainWindow = BrowserApplication::instance()->mainWindow();
-        return mainWindow->webView()->page();
-    }
+    Q_UNUSED(type);
+    BrowserApplication::instance()->newMainWindow();
+    MainWindow *mainWindow = BrowserApplication::instance()->mainWindow();
+    return mainWindow->webView()->page();
 }
 
 #if !defined(QT_NO_UITOOLS)
@@ -344,6 +345,9 @@ void WebPage::handleUnsupportedContent(QNetworkReply *reply)
 
 void WebPage::authenticationRequired(const QUrl &requestUrl, QAuthenticator *auth)
 {
+    Q_UNUSED(requestUrl);
+    Q_UNUSED(auth);
+
     MainWindow *mainWindow = BrowserApplication::instance()->mainWindow();
 
     QDialog dialog(mainWindow);
@@ -370,6 +374,9 @@ void WebPage::authenticationRequired(const QUrl &requestUrl, QAuthenticator *aut
 
 void WebPage::proxyAuthenticationRequired(const QUrl &requestUrl, QAuthenticator *auth, const QString &proxyHost)
 {
+    Q_UNUSED(requestUrl);
+    Q_UNUSED(auth);
+    Q_UNUSED(proxyHost);
   /*
     Q_UNUSED(requestUrl);
     MainWindow *mainWindow = BrowserApplication::instance()->mainWindow();
@@ -471,6 +478,7 @@ void WebView::openLinkInNewTab()
 
 void WebView::onFeaturePermissionRequested(const QUrl &securityOrigin, QWebEnginePage::Feature feature)
 {
+    Q_UNUSED(feature);
     // FeaturePermissionBar *permissionBar = new FeaturePermissionBar(this);
     // connect(permissionBar, &FeaturePermissionBar::featurePermissionProvided, page(), &QWebEnginePage::setFeaturePermission);
 
@@ -517,7 +525,8 @@ void WebView::loadFinished(bool success)
       "window.webkitNotifications.createNotification = function(icon, title, body) { foo.someMethod(title,body) };"
       "var foo = channel.objects.foo;"
       "});";
-  m_page->runJavaScript(javascript, [](const QVariant &result){ qDebug() << result; });
+  // m_page->runJavaScript(javascript, [](const QVariant &result){ qDebug() << result; });
+  m_page->runJavaScript(javascript);
   ChatServer* chatserver = new ChatServer();
   QWebChannel *channel = new QWebChannel();
   channel->registerObject("foo", chatserver);
@@ -560,6 +569,7 @@ QIcon WebView::icon() const
 
 void WebView::onIconUrlChanged(const QUrl &url)
 {
+    Q_UNUSED(url);
     // QNetworkRequest iconRequest(url);
     // m_iconReply = BrowserApplication::networkAccessManager()->get(iconRequest);
     // m_iconReply->setParent(this);
@@ -605,5 +615,6 @@ void WebView::setStatusBarText(const QString &string)
 
 void WebView::downloadRequested(const QNetworkRequest &request)
 {
+    Q_UNUSED(request);
     // BrowserApplication::downloadManager()->download(request);
 }
