@@ -21,17 +21,19 @@ QString readFile (const QString& filename)
 MainWindow::MainWindow(QWidget *parent, Qt::WindowFlags flags)
     : QMainWindow(parent, flags)
     , m_webView(new WebView(this))
+    , m_blankView(NULL)
 {
     QWidget *centralWidget = new QWidget(this);
     QVBoxLayout *layout = new QVBoxLayout;
 
+    setAttribute(Qt::WA_DeleteOnClose, true);
     layout->setSpacing(0);
     layout->setMargin(0);
     layout->addWidget(qobject_cast<QWidget*>(this->webView()));
     centralWidget->setLayout(layout);
     setCentralWidget(qobject_cast<QWidget*>(this->webView()));
     webView()->setHtml(readFile(QLatin1String(":index.html")));
-
+    // webView()->setHtml(readFile(QLatin1String(":about.html")));
 }
 
 MainWindow::~MainWindow()
@@ -52,6 +54,21 @@ void MainWindow::loadPage(const QString &page)
         currentWebView->loadUrl(url);
         // currentWebView->setFocus();
     }
+}
+
+void MainWindow::clearBlankView()
+{
+   if(m_blankView != NULL) {
+     delete m_blankView;
+     m_blankView = NULL;
+   }
+}
+
+WebView* MainWindow::createBlankView()
+{
+   clearBlankView();
+   m_blankView = new WebView(this);
+   return m_blankView;
 }
 
 void MainWindow::slotHome()

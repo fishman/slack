@@ -18,6 +18,8 @@ public:
 
     WebView *webView();
     void setTitle(const QString &title);
+    WebView *createBlankView();
+    void clearBlankView();
 
 public slots:
     void loadPage(const QString &url);
@@ -25,6 +27,7 @@ public slots:
 
 private:
     WebView *m_webView;
+    WebView *m_blankView;
 };
 
 #endif // MAINWINDOW_H

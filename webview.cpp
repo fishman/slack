@@ -244,6 +244,7 @@ bool WebPage::acceptNavigationRequest(const QUrl &url, QWebEnginePage::Navigatio
     if(url.host().contains("slack.com"))
         return true;
     else {
+        BrowserApplication::instance()->mainWindow()->clearBlankView();
         QDesktopServices::openUrl(url);
         return false;
     }
@@ -273,7 +274,8 @@ bool WebPage::certificateError(const QWebEngineCertificateError &error)
 QWebEnginePage *WebPage::createWindow(QWebEnginePage::WebWindowType type)
 {
     Q_UNUSED(type);
-    return mainWindow()->webView()->page();
+    MainWindow *mainWindow = BrowserApplication::instance()->mainWindow();
+    return mainWindow->createBlankView()->webPage();
 }
 
 #if !defined(QT_NO_UITOOLS)
